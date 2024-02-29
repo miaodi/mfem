@@ -33,7 +33,7 @@ double ParNonlinearForm::GetParGridFunctionEnergy(const Vector &x) const
 
    loc_energy = GetGridFunctionEnergy(x);
 
-   if (fnfi.Size())
+   if (HasSharedFaceIntegrators())
    {
       MFEM_ABORT("TODO: add energy contribution from shared faces");
    }
@@ -48,7 +48,7 @@ void ParNonlinearForm::Mult(const Vector &x, Vector &y) const
 {
    NonlinearForm::Mult(x, y); // x --(P)--> aux1 --(A_local)--> aux2
 
-   if (fnfi.Size())
+   if (HasSharedFaceIntegrators())
    {
       MFEM_VERIFY(!NonlinearForm::ext, "Not implemented (extensions + faces");
       // Terms over shared interior faces in parallel.
@@ -106,24 +106,67 @@ const SparseMatrix &ParNonlinearForm::GetLocalGradient(const Vector &x) const
 
 Operator &ParNonlinearForm::GetGradient(const Vector &x) const
 {
-   if (NonlinearForm::ext) { return NonlinearForm::GetGradient(x); }
+   if (NonlinearForm::ext) {
+       MFEM_VERIFY( !HasSharedFaceIntegrators(), "Not implemented (extensions + faces" );
+       return NonlinearForm::GetGradient( x );
+   }
 
    ParFiniteElementSpace *pfes = ParFESpace();
+   const int skip_zeros = 0;
 
    pGrad.Clear();
+   if ( Grad == nullptr )
+       pAllocMat();
 
    NonlinearForm::GetGradient(x); // (re)assemble Grad, no b.c.
 
-   OperatorHandle dA(pGrad.Type()), Ph(pGrad.Type());
-
-   if (fnfi.Size() == 0)
+   OperatorHandle dA(pGrad.Type()), Ph(pGrad.Type()), hdA;
+   if (!HasSharedFaceIntegrators())
    {
+       if ( !Grad->Finalized() )
+       {
+           Grad->Finalize( skip_zeros );
+       }
       dA.MakeSquareBlockDiag(pfes->GetComm(), pfes->GlobalVSize(),
                              pfes->GetDofOffsets(), Grad);
    }
    else
    {
-      MFEM_ABORT("TODO: assemble contributions from shared face terms");
+       AssembleGradOnSharedFaces( skip_zeros );
+
+       if ( !Grad->Finalized() )
+       {
+           Grad->Finalize( skip_zeros );
+       }
+
+       // handle the case when 'a' contains off-diagonal
+       int lvsize = pfes->GetVSize();
+       const HYPRE_BigInt* face_nbr_glob_ldof = pfes->GetFaceNbrGlobalDofMap();
+       HYPRE_BigInt ldof_offset = pfes->GetMyDofOffset();
+
+       Array<HYPRE_BigInt> glob_J( Grad->NumNonZeroElems() );
+       int* J = Grad->GetJ();
+       for ( int i = 0; i < glob_J.Size(); i++ )
+       {
+           if ( J[i] < lvsize )
+           {
+               glob_J[i] = J[i] + ldof_offset;
+           }
+           else
+           {
+               glob_J[i] = face_nbr_glob_ldof[J[i] - lvsize];
+           }
+       }
+
+       // TODO - construct dA directly in the A format
+       hdA.Reset( new HypreParMatrix( pfes->GetComm(), lvsize, pfes->GlobalVSize(),
+                                      pfes->GlobalVSize(), Grad->GetI(), glob_J,
+                                      Grad->GetData(), pfes->GetDofOffsets(),
+                                      pfes->GetDofOffsets() ) );
+       // - hdA owns the new HypreParMatrix
+       // - the above constructor copies all input arrays
+       glob_J.DeleteAll();
+       dA.ConvertFrom( hdA );
    }
 
    // RAP the local gradient dA.
@@ -136,6 +179,64 @@ Operator &ParNonlinearForm::GetGradient(const Vector &x) const
    pGrad_e.EliminateRowsCols(pGrad, ess_tdof_list);
 
    return *pGrad.Ptr();
+}
+
+void ParNonlinearForm::AssembleGradOnSharedFaces( int skip_zeros ) const
+{
+    MFEM_VERIFY( !NonlinearForm::ext, "Not implemented (extensions + faces" );
+    // Terms over shared interior faces in parallel.
+    ParFiniteElementSpace* pfes = ParFESpace();
+    ParMesh* pmesh = pfes->GetParMesh();
+    FaceElementTransformations* tr;
+    const FiniteElement *fe1, *fe2;
+    Array<int> vdofs1, vdofs2, vdofs_all;
+    Vector el_x;
+    DenseMatrix elmat;
+
+    aux1.HostReadWrite();
+    X.MakeRef( aux1, 0 ); // aux1 contains P.x
+    X.ExchangeFaceNbrData();
+    const int n_shared_faces = pmesh->GetNSharedFaces();
+    for ( int i = 0; i < n_shared_faces; i++ )
+    {
+        tr = pmesh->GetSharedFaceTransformations( i, true );
+        int Elem2NbrNo = tr->Elem2No - pmesh->GetNE();
+
+        fe1 = pfes->GetFE( tr->Elem1No );
+        fe2 = pfes->GetFaceNbrFE( Elem2NbrNo );
+
+        pfes->GetElementVDofs( tr->Elem1No, vdofs1 );
+        pfes->GetFaceNbrElementVDofs( Elem2NbrNo, vdofs2 );
+
+        el_x.SetSize( vdofs1.Size() + vdofs2.Size() );
+        X.GetSubVector( vdofs1, el_x.GetData() );
+        X.FaceNbrData().GetSubVector( vdofs2, el_x.GetData() + vdofs1.Size() );
+
+        vdofs1.Copy( vdofs_all );
+        for ( int j = 0; j < vdofs2.Size(); j++ )
+        {
+            if ( vdofs2[j] >= 0 )
+            {
+                vdofs2[j] += height;
+            }
+            else
+            {
+                vdofs2[j] -= height;
+            }
+        }
+        vdofs_all.Append( vdofs2 );
+
+        for ( int k = 0; k < fnfi.Size(); k++ )
+        {
+            fnfi[k]->AssembleFaceGrad( *fe1, *fe2, *tr, el_x, elmat );
+            Grad->AddSubMatrix( vdofs1, vdofs_all, elmat, skip_zeros );
+        }
+    }
+}
+
+void ParNonlinearForm::pAllocMat() const
+{
+    Grad = new SparseMatrix( height, width + ParFESpace()->GetFaceNbrVSize() );
 }
 
 void ParNonlinearForm::Update()
@@ -252,7 +353,7 @@ void ParBlockNonlinearForm::Mult(const Vector &x, Vector &y) const
 
    BlockNonlinearForm::MultBlocked(xs, ys);
 
-   if (fnfi.Size() > 0)
+   if (fnfi.Size())
    {
       MFEM_ABORT("TODO: assemble contributions from shared face terms");
    }
@@ -332,7 +433,7 @@ BlockOperator & ParBlockNonlinearForm::GetGradient(const Vector &x) const
 
    GetLocalGradient(x); // gradients are stored in 'Grads'
 
-   if (fnfi.Size() > 0)
+   if (fnfi.Size())
    {
       MFEM_ABORT("TODO: assemble contributions from shared face terms");
    }

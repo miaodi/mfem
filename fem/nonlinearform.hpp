@@ -70,6 +70,7 @@ protected:
 
    bool Serial() const { return (!P || cP); }
    const Vector &Prolongate(const Vector &x) const;
+   bool HasSharedFaceIntegrators() const { return fnfi.Size(); }
 
 public:
    /// Construct a NonlinearForm on the given FiniteElementSpace, @a f.
@@ -369,6 +370,15 @@ public:
    /// GetGradientBlocked directly.
    virtual Operator &GetGradient(const Vector &x) const;
 
+   /** @brief Access all boundary face integrators added with
+       AddBdrFaceIntegrator(). */
+   const Array<BlockNonlinearFormIntegrator*> &GetBdrFaceIntegrators() const
+   { return bfnfi; }
+
+   /// Access all integrators added with AddDomainIntegrator().
+   Array<BlockNonlinearFormIntegrator*> *GetDNFI() { return &dnfi; }
+   const Array<BlockNonlinearFormIntegrator*> *GetDNFI() const { return &dnfi; }
+   
    /// Destructor.
    virtual ~BlockNonlinearForm();
 };

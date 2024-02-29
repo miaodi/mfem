@@ -87,7 +87,7 @@ double NonlinearForm::GetGridFunctionEnergy(const Vector &x) const
 {
    if (ext)
    {
-      MFEM_VERIFY(!fnfi.Size(), "Interior faces terms not yet implemented!");
+      MFEM_VERIFY(!HasSharedFaceIntegrators(), "Interior faces terms not yet implemented!");
       MFEM_VERIFY(!bfnfi.Size(), "Boundary face terms not yet implemented!");
       return ext->GetGridFunctionEnergy(x);
    }
@@ -187,7 +187,7 @@ double NonlinearForm::GetGridFunctionEnergy(const Vector &x) const
 
    }
 
-   if (fnfi.Size())
+   if (HasSharedFaceIntegrators())
    {
       MFEM_ABORT("TODO: add energy contribution from interior face terms");
    }
@@ -335,7 +335,7 @@ void NonlinearForm::Mult(const Vector &x, Vector &y) const
       }
    }
 
-   if (fnfi.Size())
+   if (HasSharedFaceIntegrators())
    {
       FaceElementTransformations *tr;
       const FiniteElement *fe1, *fe2;
@@ -555,7 +555,7 @@ Operator &NonlinearForm::GetGradient(const Vector &x) const
       }
    }
 
-   if (fnfi.Size())
+   if (HasSharedFaceIntegrators())
    {
       FaceElementTransformations *tr;
       const FiniteElement *fe1, *fe2;
@@ -638,9 +638,10 @@ Operator &NonlinearForm::GetGradient(const Vector &x) const
       }
    }
 
-   if (!Grad->Finalized())
+   if ( !Grad->Finalized() &&
+        dynamic_cast<ParNonlinearForm*>( const_cast<NonlinearForm*>( this ) ) == nullptr ) // Let ParNonlinearForm to finalize
    {
-      Grad->Finalize(skip_zeros);
+       Grad->Finalize( skip_zeros );
    }
 
    SparseMatrix *mGrad = Grad;
@@ -689,7 +690,7 @@ NonlinearForm::~NonlinearForm()
    delete Grad;
    for (int i = 0; i <  dnfi.Size(); i++) { delete  dnfi[i]; }
    for (int i = 0; i <  bnfi.Size(); i++) { delete  bnfi[i]; }
-   for (int i = 0; i <  fnfi.Size(); i++) { delete  fnfi[i]; }
+   for (int i = 0; i <  HasSharedFaceIntegrators(); i++) { delete  fnfi[i]; }
    for (int i = 0; i < bfnfi.Size(); i++) { delete bfnfi[i]; }
    delete ext;
 }

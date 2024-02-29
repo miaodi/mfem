@@ -29,7 +29,10 @@ protected:
    mutable ParGridFunction X, Y;
    mutable OperatorHandle pGrad;
 
-public:
+   void AssembleGradOnSharedFaces(int skip_zeros) const;
+   void pAllocMat() const;
+
+ public:
    ParNonlinearForm(ParFiniteElementSpace *pf);
 
    ParFiniteElementSpace *ParFESpace() const
