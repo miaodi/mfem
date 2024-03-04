@@ -114,9 +114,13 @@ Operator &ParNonlinearForm::GetGradient(const Vector &x) const
    ParFiniteElementSpace *pfes = ParFESpace();
    const int skip_zeros = 0;
 
+   if ( HasSharedFaceIntegrators() )
+   {
+       pfes->ExchangeFaceNbrData();
+       if ( !ext && Grad == nullptr )
+           pAllocMat();
+   }
    pGrad.Clear();
-   if ( Grad == nullptr )
-       pAllocMat();
 
    NonlinearForm::GetGradient(x); // (re)assemble Grad, no b.c.
 
