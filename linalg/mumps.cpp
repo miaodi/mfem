@@ -33,6 +33,7 @@
 #define MUMPS_CNTL(I) cntl[(I) -1]
 #define MUMPS_INFO(I) info[(I) -1]
 #define MUMPS_INFOG(I) infog[(I) -1]
+#define MUMPS_RINFOG(I) rinfog[(I) -1]
 
 namespace mfem
 {
@@ -524,6 +525,9 @@ void MUMPSSolver::SetParameters()
       id->MUMPS_CNTL(7) = blr_tol;
    }
 #endif
+
+   if ( determinant )
+       id->MUMPS_ICNTL( 33 ) = 1;
 }
 
 #if MFEM_MUMPS_VERSION >= 530
@@ -630,6 +634,10 @@ void MUMPSSolver::RedistributeSol(const int *rmap, const double *x,
    delete [] send_count;
 }
 #endif
+
+double MUMPSSolver::Det() const{
+    return id->MUMPS_RINFOG( 12 );
+}
 
 } // namespace mfem
 

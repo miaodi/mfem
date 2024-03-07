@@ -1129,6 +1129,8 @@ public:
    virtual void MultTranspose(const Vector &b, Vector &x) const;
 
    virtual ~UMFPackSolver();
+
+   virtual double Det() const override;
 };
 
 /// Direct sparse solver using KLU

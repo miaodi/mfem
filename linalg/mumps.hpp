@@ -186,6 +186,13 @@ public:
    // Destructor
    ~MUMPSSolver();
 
+   void SetDetComp( bool cal )
+   {
+       determinant = cal;
+   }
+
+   virtual double Det() const override;
+
 private:
    // MPI communicator
    MPI_Comm comm;
@@ -248,6 +255,9 @@ private:
    int *recv_counts, *displs;
    mutable double *rhs_glob;
 #endif
+
+private:
+   bool determinant{false};
 }; // mfem::MUMPSSolver class
 
 } // namespace mfem

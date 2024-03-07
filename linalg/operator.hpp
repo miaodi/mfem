@@ -698,6 +698,11 @@ public:
 
    /// Set/update the solver for the given operator.
    virtual void SetOperator(const Operator &op) = 0;
+
+   virtual double Det() const
+   {
+       return 0.;
+   }
 };
 
 

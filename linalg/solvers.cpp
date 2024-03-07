@@ -3280,6 +3280,21 @@ UMFPackSolver::~UMFPackSolver()
    }
 }
 
+double UMFPackSolver::Det() const
+{
+    double Mx, Ex;
+    int status = umfpack_di_get_determinant( &Mx, &Ex, Numeric, Info );
+    umfpack_di_report_info( Control, Info );
+    if ( status < 0 )
+    {
+        umfpack_di_report_status( Control, status );
+        mfem_error(
+            "UMFPackSolver::MultTranspose :"
+            " umfpack_di_solve() failed!" );
+    }
+    return Mx;
+}
+
 void KLUSolver::Init()
 {
    klu_defaults(&Common);
